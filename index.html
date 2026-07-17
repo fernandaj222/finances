@@ -12,14 +12,35 @@
     <header class="app-header">
       <div>
         <p class="eyebrow">Control de tarjeta</p>
-        <h1>Gastos del periodo</h1>
-        <p id="periodLabel" class="period-label"></p>
-      </div>
-      <div class="header-summary" aria-live="polite">
-        <span>Total del periodo</span>
-        <strong id="periodTotal">$0.00</strong>
+        <h1>Mis gastos</h1>
+        <p class="period-label">Consulta y administra cada periodo de tu tarjeta.</p>
       </div>
     </header>
+
+    <section class="period-panel" aria-labelledby="periodTitle">
+      <button id="previousPeriodButton" class="period-arrow" type="button" aria-label="Ver periodo anterior">‹</button>
+      <div class="period-content">
+        <span id="periodStatus" class="period-status">Periodo actual</span>
+        <h2 id="periodTitle" class="period-title"></h2>
+        <select id="periodSelect" class="period-select" aria-label="Seleccionar periodo"></select>
+      </div>
+      <button id="nextPeriodButton" class="period-arrow" type="button" aria-label="Ver periodo siguiente">›</button>
+    </section>
+
+    <section class="summary-grid" aria-label="Resumen del periodo">
+      <article class="summary-card summary-card-primary">
+        <span>Total gastado</span>
+        <strong id="periodTotal">$0.00</strong>
+      </article>
+      <article class="summary-card">
+        <span>Movimientos</span>
+        <strong id="summaryExpenseCount">0</strong>
+      </article>
+      <article class="summary-card">
+        <span>Día de corte</span>
+        <strong>13</strong>
+      </article>
+    </section>
 
     <section class="card" aria-labelledby="expenseFormTitle">
       <div class="section-heading">
@@ -27,35 +48,22 @@
           <p class="eyebrow">Nuevo movimiento</p>
           <h2 id="expenseFormTitle">Capturar gasto</h2>
         </div>
-        <button id="cancelEditButton" class="button button-secondary hidden" type="button">
-          Cancelar edición
-        </button>
+        <button id="cancelEditButton" class="button button-secondary hidden" type="button">Cancelar edición</button>
       </div>
 
       <form id="expenseForm" novalidate>
         <input id="expenseId" type="hidden" />
-
         <div class="form-grid">
           <div class="field">
             <label for="expenseDate">Fecha</label>
             <input id="expenseDate" name="date" type="date" required />
             <small id="dateError" class="field-error"></small>
           </div>
-
           <div class="field field-wide">
             <label for="expenseConcept">Concepto</label>
-            <input
-              id="expenseConcept"
-              name="concept"
-              type="text"
-              maxlength="80"
-              placeholder="Ej. Uber Eats"
-              autocomplete="off"
-              required
-            />
+            <input id="expenseConcept" name="concept" type="text" maxlength="80" placeholder="Ej. Uber Eats" autocomplete="off" required />
             <small id="conceptError" class="field-error"></small>
           </div>
-
           <div class="field">
             <label for="expenseType">Tipo</label>
             <select id="expenseType" name="type" required>
@@ -63,67 +71,66 @@
             </select>
             <small id="typeError" class="field-error"></small>
           </div>
-
           <div class="field">
             <label for="expenseAmount">Costo</label>
             <div class="currency-input">
               <span aria-hidden="true">$</span>
-              <input
-                id="expenseAmount"
-                name="amount"
-                type="number"
-                min="0.01"
-                step="0.01"
-                inputmode="decimal"
-                placeholder="0.00"
-                required
-              />
+              <input id="expenseAmount" name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="0.00" required />
             </div>
             <small id="amountError" class="field-error"></small>
           </div>
         </div>
-
+        <p id="datePeriodHint" class="form-hint"></p>
         <div class="form-actions">
-          <button id="submitButton" class="button button-primary" type="submit">
-            Agregar gasto
-          </button>
+          <button id="submitButton" class="button button-primary" type="submit">Agregar gasto</button>
         </div>
       </form>
     </section>
 
-    <section class="card" aria-labelledby="expensesTableTitle">
-      <div class="section-heading table-heading">
-        <div>
-          <p class="eyebrow">Periodo activo</p>
-          <h2 id="expensesTableTitle">Movimientos registrados</h2>
+    <div class="content-grid">
+      <section class="card movements-card" aria-labelledby="expensesTableTitle">
+        <div class="section-heading table-heading">
+          <div>
+            <p class="eyebrow">Periodo seleccionado</p>
+            <h2 id="expensesTableTitle">Movimientos registrados</h2>
+          </div>
+          <span id="expenseCount" class="count-badge">0 gastos</span>
         </div>
-        <span id="expenseCount" class="count-badge">0 gastos</span>
-      </div>
 
-      <div id="emptyState" class="empty-state">
-        <h3>Aún no hay gastos registrados</h3>
-        <p>Captura tu primer movimiento para comenzar a llenar el periodo.</p>
-      </div>
+        <div id="emptyState" class="empty-state">
+          <h3>Aún no hay gastos en este periodo</h3>
+          <p>Captura un movimiento con una fecha dentro de este ciclo.</p>
+        </div>
 
-      <div id="tableContainer" class="table-container hidden">
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">Fecha</th>
-              <th scope="col">Concepto</th>
-              <th scope="col">Tipo</th>
-              <th scope="col" class="amount-column">Costo</th>
-              <th scope="col" class="actions-column">Acciones</th>
-            </tr>
-          </thead>
-          <tbody id="expensesTableBody"></tbody>
-        </table>
-      </div>
-    </section>
+        <div id="tableContainer" class="table-container hidden">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Fecha</th>
+                <th scope="col">Concepto</th>
+                <th scope="col">Tipo</th>
+                <th scope="col" class="amount-column">Costo</th>
+                <th scope="col" class="actions-column">Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="expensesTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <aside class="card history-card" aria-labelledby="historyTitle">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Historial</p>
+            <h2 id="historyTitle">Periodos</h2>
+          </div>
+        </div>
+        <div id="periodHistory" class="period-history"></div>
+      </aside>
+    </div>
   </main>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-
   <script src="app.js"></script>
 </body>
 </html>
