@@ -4,16 +4,37 @@ const ExpenseType = Object.freeze({
   FOOD: 'COMIDA',
   TRANSPORTATION: 'TRANSPORTE',
   SUBSCRIPTIONS: 'SUSCRIPCIONES',
-  HEALTH: 'SALUD',
-  PURCHASES: 'COMPRAS',
+  PERSONAL_HEALTH: 'PERSONAL_Y_SALUD',
   YUKI: 'YUKI',
   MSI: 'MSI'
 });
 
+const LegacyExpenseType = Object.freeze({
+  HEALTH: 'SALUD',
+  PURCHASES: 'COMPRAS'
+});
+
+const ExpenseTypeIcon = Object.freeze({
+  [ExpenseType.FOOD]: '🍔',
+  [ExpenseType.TRANSPORTATION]: '🚗',
+  [ExpenseType.SUBSCRIPTIONS]: '📱',
+  [ExpenseType.PERSONAL_HEALTH]: '🩺',
+  [ExpenseType.YUKI]: '🐾',
+  [ExpenseType.MSI]: '💳'
+});
+
+const ExpenseSubtypes = Object.freeze({
+  [ExpenseType.FOOD]: ['Uber Eats', 'Restaurantes', 'Autoservicio', 'Súper', 'Otro'],
+  [ExpenseType.TRANSPORTATION]: ['Uber', 'DiDi', 'Gasolina', 'Estacionamiento', 'Otro'],
+  [ExpenseType.SUBSCRIPTIONS]: ['Streaming', 'Música', 'Nube', 'Aplicaciones', 'Otro'],
+  [ExpenseType.PERSONAL_HEALTH]: ['Ecommerce', 'Ropa', 'Farmacia', 'Otro'],
+  [ExpenseType.YUKI]: ['Alimento', 'Veterinario', 'Accesorios', 'Estética', 'Otro'],
+  [ExpenseType.MSI]: ['Tecnología', 'Hogar', 'Ropa', 'Otro']
+});
+
 const STORAGE_KEY = 'personal-finance-expenses-v1';
+const PERIOD_START_STORAGE_KEY = 'personal-finance-period-start-v1';
 const CUT_OFF_DAY = 13;
-const PERIODS_BEFORE_CURRENT = 11;
-const PERIODS_AFTER_CURRENT = 1;
 
 const elements = {
   form: document.querySelector('#expenseForm'),
@@ -21,6 +42,7 @@ const elements = {
   date: document.querySelector('#expenseDate'),
   concept: document.querySelector('#expenseConcept'),
   type: document.querySelector('#expenseType'),
+  subtype: document.querySelector('#expenseSubtype'),
   amount: document.querySelector('#expenseAmount'),
   submitButton: document.querySelector('#submitButton'),
   cancelEditButton: document.querySelector('#cancelEditButton'),
@@ -33,21 +55,24 @@ const elements = {
   summaryExpenseCount: document.querySelector('#summaryExpenseCount'),
   expenseCount: document.querySelector('#expenseCount'),
   tableBody: document.querySelector('#expensesTableBody'),
+  categoryKpis: document.querySelector('#categoryKpis'),
+  categoryTableBody: document.querySelector('#categoryTableBody'),
   tableContainer: document.querySelector('#tableContainer'),
   emptyState: document.querySelector('#emptyState'),
-  periodHistory: document.querySelector('#periodHistory'),
   datePeriodHint: document.querySelector('#datePeriodHint'),
   toast: document.querySelector('#toast'),
   errors: {
     date: document.querySelector('#dateError'),
     concept: document.querySelector('#conceptError'),
     type: document.querySelector('#typeError'),
+    subtype: document.querySelector('#subtypeError'),
     amount: document.querySelector('#amountError')
   }
 };
 
 let expenses = loadExpenses();
 const currentPeriod = getCardPeriod(new Date());
+const firstTrackedPeriodStart = loadFirstTrackedPeriodStart();
 let availablePeriods = buildAvailablePeriods();
 let selectedPeriodId = currentPeriod.id;
 let toastTimer;
@@ -56,6 +81,7 @@ initialize();
 
 function initialize() {
   populateExpenseTypes();
+  populateExpenseSubtypes();
   migrateExpensePeriods();
   renderPeriodOptions();
   setDefaultDate();
@@ -68,8 +94,8 @@ function initialize() {
   elements.previousPeriodButton.addEventListener('click', () => navigatePeriod(-1));
   elements.nextPeriodButton.addEventListener('click', () => navigatePeriod(1));
   elements.periodSelect.addEventListener('change', handlePeriodSelection);
-  elements.periodHistory.addEventListener('click', handleHistorySelection);
   elements.date.addEventListener('change', updateDatePeriodHint);
+  elements.type.addEventListener('change', populateExpenseSubtypes);
 }
 
 function populateExpenseTypes() {
@@ -81,21 +107,38 @@ function populateExpenseTypes() {
   });
 }
 
+function populateExpenseSubtypes() {
+  const selectedType = elements.type.value;
+  elements.subtype.replaceChildren();
+
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = selectedType ? 'Selecciona un tipo' : 'Selecciona una categoría primero';
+  elements.subtype.append(placeholder);
+  elements.subtype.disabled = !selectedType;
+  elements.errors.subtype.textContent = '';
+  elements.subtype.removeAttribute('aria-invalid');
+
+  (ExpenseSubtypes[selectedType] || []).forEach((subtype) => {
+    const option = document.createElement('option');
+    option.value = subtype;
+    option.textContent = subtype;
+    elements.subtype.append(option);
+  });
+}
+
 function buildAvailablePeriods() {
   const periods = [];
+  const firstStart = parseLocalDate(firstTrackedPeriodStart);
   const currentStart = parseLocalDate(currentPeriod.startDate);
 
-  for (let offset = -PERIODS_BEFORE_CURRENT; offset <= PERIODS_AFTER_CURRENT; offset += 1) {
-    const start = new Date(currentStart.getFullYear(), currentStart.getMonth() + offset, CUT_OFF_DAY + 1);
+  for (let offset = 0; ; offset += 1) {
+    const start = new Date(firstStart.getFullYear(), firstStart.getMonth() + offset, CUT_OFF_DAY + 1);
+    if (start > currentStart) break;
     periods.push(getCardPeriod(start));
   }
 
-  expenses.forEach((expense) => {
-    const period = getCardPeriod(parseLocalDate(expense.date));
-    if (!periods.some((item) => item.id === period.id)) periods.push(period);
-  });
-
-  return periods.sort((a, b) => a.startDate.localeCompare(b.startDate));
+  return periods;
 }
 
 function renderPeriodOptions() {
@@ -111,11 +154,6 @@ function renderPeriodOptions() {
 
 function handlePeriodSelection(event) {
   selectPeriod(event.target.value);
-}
-
-function handleHistorySelection(event) {
-  const button = event.target.closest('button[data-period-id]');
-  if (button) selectPeriod(button.dataset.periodId);
 }
 
 function navigatePeriod(direction) {
@@ -167,9 +205,13 @@ function migrateExpensePeriods() {
   let changed = false;
   expenses = expenses.map((expense) => {
     const correctPeriodId = getCardPeriod(parseLocalDate(expense.date)).id;
-    if (expense.periodId !== correctPeriodId) {
+    const correctType = {
+      [LegacyExpenseType.HEALTH]: ExpenseType.PERSONAL_HEALTH,
+      [LegacyExpenseType.PURCHASES]: ExpenseType.PERSONAL_HEALTH
+    }[expense.type] || expense.type;
+    if (expense.periodId !== correctPeriodId || expense.type !== correctType) {
       changed = true;
-      return { ...expense, periodId: correctPeriodId };
+      return { ...expense, periodId: correctPeriodId, type: correctType };
     }
     return expense;
   });
@@ -184,6 +226,7 @@ function handleSubmit(event) {
     date: elements.date.value,
     concept: elements.concept.value.trim(),
     type: elements.type.value,
+    subtype: elements.subtype.value,
     amount: Number(elements.amount.value)
   };
 
@@ -222,8 +265,17 @@ function handleSubmit(event) {
 function validateExpense(draft) {
   const errors = {};
   if (!draft.date) errors.date = 'Selecciona una fecha.';
+  if (draft.date) {
+    const periodId = getCardPeriod(parseLocalDate(draft.date)).id;
+    if (!availablePeriods.some((period) => period.id === periodId)) {
+      errors.date = 'Selecciona una fecha de un periodo disponible.';
+    }
+  }
   if (!draft.concept) errors.concept = 'Escribe el concepto del gasto.';
-  if (!Object.values(ExpenseType).includes(draft.type)) errors.type = 'Selecciona un tipo válido.';
+  if (!Object.values(ExpenseType).includes(draft.type)) errors.type = 'Selecciona una categoría válida.';
+  if (draft.type && !(ExpenseSubtypes[draft.type] || []).includes(draft.subtype)) {
+    errors.subtype = 'Selecciona un tipo válido.';
+  }
   if (!Number.isFinite(draft.amount) || draft.amount <= 0) errors.amount = 'Ingresa un costo mayor que cero.';
   return errors;
 }
@@ -248,7 +300,7 @@ function render() {
   renderPeriodHeader(selectedPeriod);
   renderSummary(periodExpenses);
   renderTable(periodExpenses);
-  renderHistory();
+  renderCategoryTable(periodExpenses);
   updateNavigationButtons();
 }
 
@@ -282,6 +334,7 @@ function renderTable(periodExpenses) {
       <td>${escapeHTML(formatShortDate(expense.date))}</td>
       <td>${escapeHTML(expense.concept)}</td>
       <td><span class="type-badge">${escapeHTML(formatType(expense.type))}</span></td>
+      <td>${escapeHTML(expense.subtype || 'Sin clasificar')}</td>
       <td class="amount-column">${escapeHTML(formatCurrency(expense.amount))}</td>
       <td class="actions-column">
         <div class="table-actions">
@@ -293,22 +346,58 @@ function renderTable(periodExpenses) {
   });
 }
 
-function renderHistory() {
-  elements.periodHistory.replaceChildren();
-  [...availablePeriods].reverse().forEach((period) => {
-    const periodExpenses = getPeriodExpenses(period.id);
-    const total = periodExpenses.reduce((sum, expense) => sum + expense.amount, 0);
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = `history-item${period.id === selectedPeriodId ? ' active' : ''}`;
-    button.dataset.periodId = period.id;
-    button.innerHTML = `
-      <span>
-        <strong>${escapeHTML(formatCompactPeriodLabel(period))}</strong>
-        <small>${escapeHTML(formatPeriodStatus(period.status))} · ${periodExpenses.length} movimientos</small>
-      </span>
-      <b>${escapeHTML(formatCurrency(total))}</b>`;
-    elements.periodHistory.append(button);
+function renderCategoryTable(periodExpenses) {
+  elements.categoryKpis.replaceChildren();
+  elements.categoryTableBody.replaceChildren();
+  const periodTotal = periodExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+
+  Object.values(ExpenseType).forEach((type) => {
+    const typeExpenses = periodExpenses.filter((expense) => expense.type === type);
+    const total = typeExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+    const percentage = periodTotal > 0 ? Math.round((total / periodTotal) * 100) : 0;
+    const kpi = document.createElement('article');
+    kpi.className = 'category-kpi';
+    kpi.innerHTML = `
+      <div class="category-kpi-heading">
+        <span class="category-kpi-name">
+          <span class="category-kpi-icon" aria-hidden="true">${ExpenseTypeIcon[type]}</span>
+          ${escapeHTML(formatType(type))}
+        </span>
+        <strong>${escapeHTML(formatCurrency(total))}</strong>
+      </div>
+      <div class="category-kpi-progress-row">
+        <div class="category-kpi-progress" role="progressbar" aria-label="${escapeHTML(formatType(type))}" aria-valuenow="${percentage}" aria-valuemin="0" aria-valuemax="100">
+          <span style="width: ${percentage}%"></span>
+        </div>
+        <b>${percentage}%</b>
+      </div>
+      <small>${typeExpenses.length} ${typeExpenses.length === 1 ? 'movimiento' : 'movimientos'} del periodo</small>`;
+    elements.categoryKpis.append(kpi);
+
+    const row = document.createElement('tr');
+    row.className = 'category-total-row';
+    row.innerHTML = `
+      <td><span class="type-badge">${escapeHTML(formatType(type))}</span></td>
+      <td><strong>Total categoría</strong></td>
+      <td>${typeExpenses.length}</td>
+      <td class="amount-column">${escapeHTML(formatCurrency(total))}</td>`;
+    elements.categoryTableBody.append(row);
+
+    const subtypeNames = [...ExpenseSubtypes[type]];
+    if (typeExpenses.some((expense) => !expense.subtype)) subtypeNames.push('Sin clasificar');
+
+    subtypeNames.forEach((subtype) => {
+      const subtypeExpenses = typeExpenses.filter((expense) =>
+        subtype === 'Sin clasificar' ? !expense.subtype : expense.subtype === subtype);
+      const subtypeTotal = subtypeExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+      const subtypeRow = document.createElement('tr');
+      subtypeRow.innerHTML = `
+        <td></td>
+        <td class="subcategory-name">↳ ${escapeHTML(subtype)}</td>
+        <td>${subtypeExpenses.length}</td>
+        <td class="amount-column">${escapeHTML(formatCurrency(subtypeTotal))}</td>`;
+      elements.categoryTableBody.append(subtypeRow);
+    });
   });
 }
 
@@ -332,6 +421,8 @@ function startEdit(id) {
   elements.date.value = expense.date;
   elements.concept.value = expense.concept;
   elements.type.value = expense.type;
+  populateExpenseSubtypes();
+  elements.subtype.value = expense.subtype || '';
   elements.amount.value = String(expense.amount);
   elements.submitButton.textContent = 'Guardar cambios';
   elements.cancelEditButton.classList.remove('hidden');
@@ -353,6 +444,7 @@ function deleteExpense(id) {
 
 function resetForm() {
   elements.form.reset();
+  populateExpenseSubtypes();
   elements.expenseId.value = '';
   elements.submitButton.textContent = 'Agregar gasto';
   elements.cancelEditButton.classList.add('hidden');
@@ -389,9 +481,29 @@ function loadExpenses() {
   }
 }
 
+function loadFirstTrackedPeriodStart() {
+  try {
+    const storedStart = localStorage.getItem(PERIOD_START_STORAGE_KEY);
+    if (storedStart) {
+      const storedDate = parseLocalDate(storedStart);
+      const isValidStart = !Number.isNaN(storedDate.getTime()) &&
+        getCardPeriod(storedDate).startDate === storedStart &&
+        storedStart <= currentPeriod.startDate;
+      if (isValidStart) return storedStart;
+    }
+
+    localStorage.setItem(PERIOD_START_STORAGE_KEY, currentPeriod.startDate);
+  } catch (error) {
+    console.error('No fue posible guardar el inicio del historial.', error);
+  }
+
+  return currentPeriod.startDate;
+}
+
 function isValidStoredExpense(expense) {
+  const validTypes = [...Object.values(ExpenseType), ...Object.values(LegacyExpenseType)];
   return expense && typeof expense.id === 'string' && typeof expense.date === 'string' &&
-    typeof expense.concept === 'string' && Object.values(ExpenseType).includes(expense.type) &&
+    typeof expense.concept === 'string' && validTypes.includes(expense.type) &&
     Number.isFinite(expense.amount);
 }
 
@@ -424,10 +536,6 @@ function formatPeriodLabel(period) {
   return `${formatDayMonth(period.startDate)} – ${formatDayMonthYear(period.endDate)}`;
 }
 
-function formatCompactPeriodLabel(period) {
-  return `${formatDayMonth(period.startDate)} – ${formatDayMonth(period.endDate)}`;
-}
-
 function formatDayMonth(value) {
   return new Intl.DateTimeFormat('es-MX', { day: 'numeric', month: 'short', timeZone: 'UTC' })
     .format(new Date(`${value}T00:00:00Z`)).replace('.', '');
@@ -452,7 +560,8 @@ function formatShortDate(value) {
 }
 
 function formatType(type) {
-  return type.charAt(0) + type.slice(1).toLowerCase();
+  const label = type.replaceAll('_', ' ');
+  return label.charAt(0) + label.slice(1).toLowerCase();
 }
 
 function roundMoney(value) {

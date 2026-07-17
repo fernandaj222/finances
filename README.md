@@ -5,9 +5,12 @@ Aplicación web estática para registrar gastos por periodo de tarjeta de crédi
 ## Funcionalidades
 
 - Periodos automáticos del día 14 al día 13 del mes siguiente.
-- Navegación entre periodos anteriores, actual y siguiente.
-- Historial con total y cantidad de movimientos por periodo.
+- Historial progresivo: inicia con el periodo actual y agrega uno nuevo cada día 14.
+- Navegación entre los periodos disponibles.
+- Resumen del gasto por categoría para el periodo seleccionado.
+- Indicadores por categoría con monto, porcentaje y participación visual.
 - Alta, edición y eliminación de gastos.
+- Clasificación de movimientos por categoría y tipo.
 - Asignación automática del periodo según la fecha del gasto.
 - Persistencia local mediante `localStorage`.
 - Compatibilidad con los datos guardados por la primera versión.

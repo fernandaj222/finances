@@ -61,15 +61,22 @@
           </div>
           <div class="field field-wide">
             <label for="expenseConcept">Concepto</label>
-            <input id="expenseConcept" name="concept" type="text" maxlength="80" placeholder="Ej. Uber Eats" autocomplete="off" required />
+            <input id="expenseConcept" name="concept" type="text" maxlength="80" placeholder="Ej. Cena del viernes" autocomplete="off" required />
             <small id="conceptError" class="field-error"></small>
           </div>
           <div class="field">
-            <label for="expenseType">Tipo</label>
+            <label for="expenseType">Categoría</label>
             <select id="expenseType" name="type" required>
-              <option value="">Selecciona un tipo</option>
+              <option value="">Selecciona una categoría</option>
             </select>
             <small id="typeError" class="field-error"></small>
+          </div>
+          <div class="field">
+            <label for="expenseSubtype">Tipo</label>
+            <select id="expenseSubtype" name="subtype" required disabled>
+              <option value="">Selecciona una categoría primero</option>
+            </select>
+            <small id="subtypeError" class="field-error"></small>
           </div>
           <div class="field">
             <label for="expenseAmount">Costo</label>
@@ -108,6 +115,7 @@
               <tr>
                 <th scope="col">Fecha</th>
                 <th scope="col">Concepto</th>
+                <th scope="col">Categoría</th>
                 <th scope="col">Tipo</th>
                 <th scope="col" class="amount-column">Costo</th>
                 <th scope="col" class="actions-column">Acciones</th>
@@ -118,15 +126,31 @@
         </div>
       </section>
 
-      <aside class="card history-card" aria-labelledby="historyTitle">
+      <section class="card category-card" aria-labelledby="categoryTableTitle">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">Historial</p>
-            <h2 id="historyTitle">Periodos</h2>
+            <p class="eyebrow">Periodo seleccionado</p>
+            <h2 id="categoryTableTitle">Indicadores por categoría</h2>
           </div>
         </div>
-        <div id="periodHistory" class="period-history"></div>
-      </aside>
+
+        <div id="categoryKpis" class="category-kpi-grid"></div>
+
+        <h3 class="category-table-heading">Detalle por categoría</h3>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Categoría</th>
+                <th scope="col">Tipo</th>
+                <th scope="col">Movimientos</th>
+                <th scope="col" class="amount-column">Total gastado</th>
+              </tr>
+            </thead>
+            <tbody id="categoryTableBody"></tbody>
+          </table>
+        </div>
+      </section>
     </div>
   </main>
 
