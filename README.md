@@ -9,6 +9,7 @@ Aplicación web estática para registrar gastos por periodo de tarjeta de crédi
 - Navegación entre los periodos disponibles.
 - Resumen del gasto por categoría para el periodo seleccionado.
 - Indicadores por categoría con monto, porcentaje y participación visual.
+- Presupuestos por categoría, con disponible y alertas de excedente.
 - Alta, edición y eliminación de gastos.
 - Clasificación de movimientos por categoría y tipo.
 - Asignación automática del periodo según la fecha del gasto.

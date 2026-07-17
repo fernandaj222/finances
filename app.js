@@ -4,22 +4,23 @@ const ExpenseType = Object.freeze({
   FOOD: 'COMIDA',
   TRANSPORTATION: 'TRANSPORTE',
   SUBSCRIPTIONS: 'SUSCRIPCIONES',
-  PERSONAL_HEALTH: 'PERSONAL_Y_SALUD',
+  PURCHASES: 'COMPRAS',
+  HEALTH: 'SALUD',
   YUKI: 'YUKI',
   MSI: 'MSI'
 });
 
 const LegacyExpenseType = Object.freeze({
-  HEALTH: 'SALUD',
-  PURCHASES: 'COMPRAS'
+  PERSONAL_HEALTH: 'PERSONAL_Y_SALUD'
 });
 
 const ExpenseTypeIcon = Object.freeze({
   [ExpenseType.FOOD]: '🍔',
   [ExpenseType.TRANSPORTATION]: '🚗',
-  [ExpenseType.SUBSCRIPTIONS]: '📱',
-  [ExpenseType.PERSONAL_HEALTH]: '🩺',
-  [ExpenseType.YUKI]: '🐾',
+  [ExpenseType.SUBSCRIPTIONS]: '📺',
+  [ExpenseType.PURCHASES]: '🛍️',
+  [ExpenseType.HEALTH]: '❤️',
+  [ExpenseType.YUKI]: '🐶',
   [ExpenseType.MSI]: '💳'
 });
 
@@ -27,9 +28,30 @@ const ExpenseSubtypes = Object.freeze({
   [ExpenseType.FOOD]: ['Uber Eats', 'Restaurantes', 'Autoservicio', 'Súper', 'Otro'],
   [ExpenseType.TRANSPORTATION]: ['Uber', 'DiDi', 'Gasolina', 'Estacionamiento', 'Otro'],
   [ExpenseType.SUBSCRIPTIONS]: ['Streaming', 'Música', 'Nube', 'Aplicaciones', 'Otro'],
-  [ExpenseType.PERSONAL_HEALTH]: ['Ecommerce', 'Ropa', 'Farmacia', 'Otro'],
+  [ExpenseType.PURCHASES]: ['Ecommerce', 'Ropa', 'Otro'],
+  [ExpenseType.HEALTH]: ['Wegovy', 'Farmacia', 'Consultas', 'Otro'],
   [ExpenseType.YUKI]: ['Alimento', 'Veterinario', 'Accesorios', 'Estética', 'Otro'],
   [ExpenseType.MSI]: ['Tecnología', 'Hogar', 'Ropa', 'Otro']
+});
+
+const CategoryBudgets = Object.freeze({
+  [ExpenseType.FOOD]: 2300,
+  [ExpenseType.TRANSPORTATION]: 1500,
+  [ExpenseType.SUBSCRIPTIONS]: 1850,
+  [ExpenseType.PURCHASES]: 1500,
+  [ExpenseType.HEALTH]: null,
+  [ExpenseType.YUKI]: null,
+  [ExpenseType.MSI]: null
+});
+
+const CategoryBudgetComments = Object.freeze({
+  [ExpenseType.FOOD]: 'Incluye restaurantes, Uber Eats, autoservicio y súper.',
+  [ExpenseType.TRANSPORTATION]: 'Considera gasolina y un menor uso de Uber o DiDi.',
+  [ExpenseType.SUBSCRIPTIONS]: 'Gasto prácticamente fijo.',
+  [ExpenseType.PURCHASES]: 'Amazon, Mercado Libre, ropa y compras personales.',
+  [ExpenseType.HEALTH]: 'Solo seguimiento: farmacia, consultas y tratamientos.',
+  [ExpenseType.YUKI]: 'Solo seguimiento, sin límite presupuestal.',
+  [ExpenseType.MSI]: 'Seguimiento del monto mensual por pagar.'
 });
 
 const STORAGE_KEY = 'personal-finance-expenses-v1';
@@ -52,6 +74,8 @@ const elements = {
   previousPeriodButton: document.querySelector('#previousPeriodButton'),
   nextPeriodButton: document.querySelector('#nextPeriodButton'),
   periodTotal: document.querySelector('#periodTotal'),
+  budgetTotal: document.querySelector('#budgetTotal'),
+  budgetRemaining: document.querySelector('#budgetRemaining'),
   summaryExpenseCount: document.querySelector('#summaryExpenseCount'),
   expenseCount: document.querySelector('#expenseCount'),
   tableBody: document.querySelector('#expensesTableBody'),
@@ -205,10 +229,10 @@ function migrateExpensePeriods() {
   let changed = false;
   expenses = expenses.map((expense) => {
     const correctPeriodId = getCardPeriod(parseLocalDate(expense.date)).id;
-    const correctType = {
-      [LegacyExpenseType.HEALTH]: ExpenseType.PERSONAL_HEALTH,
-      [LegacyExpenseType.PURCHASES]: ExpenseType.PERSONAL_HEALTH
-    }[expense.type] || expense.type;
+    const healthSubtypes = ['Wegovy', 'Farmacia', 'Consultas'];
+    const correctType = expense.type === LegacyExpenseType.PERSONAL_HEALTH
+      ? (healthSubtypes.includes(expense.subtype) ? ExpenseType.HEALTH : ExpenseType.PURCHASES)
+      : expense.type;
     if (expense.periodId !== correctPeriodId || expense.type !== correctType) {
       changed = true;
       return { ...expense, periodId: correctPeriodId, type: correctType };
@@ -318,7 +342,20 @@ function getPeriodExpenses(periodId) {
 
 function renderSummary(periodExpenses) {
   const total = periodExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const budgetTotal = Object.values(CategoryBudgets)
+    .filter(Number.isFinite)
+    .reduce((sum, budget) => sum + budget, 0);
+  const budgetedExpenses = periodExpenses.filter((expense) =>
+    Number.isFinite(CategoryBudgets[expense.type]));
+  const budgetedTotal = budgetedExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const remaining = budgetTotal - budgetedTotal;
+
   elements.periodTotal.textContent = formatCurrency(total);
+  elements.budgetTotal.textContent = formatCurrency(budgetTotal);
+  elements.budgetRemaining.textContent = remaining >= 0
+    ? formatCurrency(remaining)
+    : `${formatCurrency(Math.abs(remaining))} excedido`;
+  elements.budgetRemaining.dataset.status = remaining < 0 ? 'OVER' : 'AVAILABLE';
   elements.summaryExpenseCount.textContent = String(periodExpenses.length);
   elements.expenseCount.textContent = `${periodExpenses.length} ${periodExpenses.length === 1 ? 'gasto' : 'gastos'}`;
 }
@@ -349,14 +386,29 @@ function renderTable(periodExpenses) {
 function renderCategoryTable(periodExpenses) {
   elements.categoryKpis.replaceChildren();
   elements.categoryTableBody.replaceChildren();
-  const periodTotal = periodExpenses.reduce((sum, expense) => sum + expense.amount, 0);
 
   Object.values(ExpenseType).forEach((type) => {
     const typeExpenses = periodExpenses.filter((expense) => expense.type === type);
     const total = typeExpenses.reduce((sum, expense) => sum + expense.amount, 0);
-    const percentage = periodTotal > 0 ? Math.round((total / periodTotal) * 100) : 0;
+    const budget = CategoryBudgets[type];
+    const hasBudget = Number.isFinite(budget);
+    const percentage = hasBudget ? Math.round((total / budget) * 100) : null;
+    const balance = hasBudget ? budget - total : null;
+    const progressMarkup = hasBudget
+      ? `<div class="category-kpi-progress-row">
+          <div class="category-kpi-progress${percentage > 100 ? ' over-budget' : ''}" role="progressbar" aria-label="Presupuesto de ${escapeHTML(formatType(type))}" aria-valuenow="${Math.min(percentage, 100)}" aria-valuetext="${percentage}% utilizado" aria-valuemin="0" aria-valuemax="100">
+            <span style="width: ${Math.min(percentage, 100)}%"></span>
+          </div>
+          <b>${percentage}%</b>
+        </div>`
+      : '<div class="category-kpi-unbudgeted">Sin presupuesto · solo seguimiento</div>';
+    const balanceLabel = hasBudget
+      ? (balance >= 0
+        ? `${formatCurrency(balance)} disponible`
+        : `${formatCurrency(Math.abs(balance))} excedido`)
+      : 'Sin evaluación presupuestal';
     const kpi = document.createElement('article');
-    kpi.className = 'category-kpi';
+    kpi.className = `category-kpi${hasBudget && balance < 0 ? ' over-budget' : ''}`;
     kpi.innerHTML = `
       <div class="category-kpi-heading">
         <span class="category-kpi-name">
@@ -365,13 +417,9 @@ function renderCategoryTable(periodExpenses) {
         </span>
         <strong>${escapeHTML(formatCurrency(total))}</strong>
       </div>
-      <div class="category-kpi-progress-row">
-        <div class="category-kpi-progress" role="progressbar" aria-label="${escapeHTML(formatType(type))}" aria-valuenow="${percentage}" aria-valuemin="0" aria-valuemax="100">
-          <span style="width: ${percentage}%"></span>
-        </div>
-        <b>${percentage}%</b>
-      </div>
-      <small>${typeExpenses.length} ${typeExpenses.length === 1 ? 'movimiento' : 'movimientos'} del periodo</small>`;
+      ${progressMarkup}
+      <small>${typeExpenses.length} ${typeExpenses.length === 1 ? 'movimiento' : 'movimientos'} · ${escapeHTML(balanceLabel)}</small>
+      <p class="category-budget-comment">${escapeHTML(CategoryBudgetComments[type])}</p>`;
     elements.categoryKpis.append(kpi);
 
     const row = document.createElement('tr');
