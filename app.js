@@ -608,6 +608,7 @@ function formatShortDate(value) {
 }
 
 function formatType(type) {
+  if (type === ExpenseType.MSI) return 'MSI';
   const label = type.replaceAll('_', ' ');
   return label.charAt(0) + label.slice(1).toLowerCase();
 }
