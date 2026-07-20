@@ -15,6 +15,13 @@
         <h1>Mis gastos</h1>
         <p class="period-label">Consulta y administra cada periodo de tu tarjeta.</p>
       </div>
+      <div class="auth-panel" aria-live="polite">
+        <span id="authStatus">Verificando sesión…</span>
+        <div class="auth-actions">
+          <button id="signInButton" class="button button-primary" type="button" disabled>Entrar con Google</button>
+          <button id="signOutButton" class="button button-secondary hidden" type="button">Cerrar sesión</button>
+        </div>
+      </div>
     </header>
 
     <section class="period-panel" aria-labelledby="periodTitle">

@@ -5,6 +5,8 @@ import {
   deleteExpenseFromFirebase,
   isFirebaseConfigured,
   saveExpenseToFirebase,
+  signInWithGoogle,
+  signOutFromFirebase,
   syncExpensesToFirebase
 } from './firebase-service.js';
 
@@ -93,6 +95,9 @@ const elements = {
   emptyState: document.querySelector('#emptyState'),
   datePeriodHint: document.querySelector('#datePeriodHint'),
   toast: document.querySelector('#toast'),
+  authStatus: document.querySelector('#authStatus'),
+  signInButton: document.querySelector('#signInButton'),
+  signOutButton: document.querySelector('#signOutButton'),
   errors: {
     date: document.querySelector('#dateError'),
     concept: document.querySelector('#conceptError'),
@@ -108,12 +113,18 @@ let firstTrackedPeriodStart;
 let availablePeriods = [];
 let selectedPeriodId = currentPeriod.id;
 let toastTimer;
+let firebaseConfigured = false;
+let firebaseConnectionFailed = false;
+let signedInUser = null;
 
 initialize().catch(handleInitializationError);
 
 async function initialize() {
   const localExpenses = loadLocalExpenses();
-  expenses = await connectToFirebase(localExpenses);
+  const firebaseState = await connectToFirebase(localExpenses);
+  expenses = firebaseState.expenses;
+  firebaseConfigured = firebaseState.configured;
+  signedInUser = firebaseState.user;
   saveExpensesLocally();
   firstTrackedPeriodStart = loadFirstTrackedPeriodStart();
   availablePeriods = buildAvailablePeriods();
@@ -126,22 +137,15 @@ async function initialize() {
   updateDatePeriodHint();
   render();
 
-  elements.submitButton.disabled = false;
-  elements.submitButton.textContent = 'Agregar gasto';
-
-  elements.form.addEventListener('submit', handleSubmit);
-  elements.cancelEditButton.addEventListener('click', resetForm);
-  elements.tableBody.addEventListener('click', handleTableAction);
-  elements.previousPeriodButton.addEventListener('click', () => navigatePeriod(-1));
-  elements.nextPeriodButton.addEventListener('click', () => navigatePeriod(1));
-  elements.periodSelect.addEventListener('change', handlePeriodSelection);
-  elements.date.addEventListener('change', updateDatePeriodHint);
-  elements.type.addEventListener('change', populateExpenseSubtypes);
+  attachEventListeners();
+  updateAuthenticationUI();
 
   if (!isFirebaseConfigured()) {
     showToast('Firebase aún no está configurado; los datos siguen guardándose localmente.');
+  } else if (isPermanentUser(signedInUser)) {
+    showToast('Registros sincronizados con tu cuenta de Google.');
   } else {
-    showToast('Registros sincronizados con Firebase.');
+    showToast('Inicia sesión con Google para sincronizar tus registros.');
   }
 }
 
@@ -159,9 +163,14 @@ function handleInitializationError(error) {
   setDefaultDate();
   updateDatePeriodHint();
   render();
-  elements.submitButton.disabled = false;
-  elements.submitButton.textContent = 'Agregar gasto';
+  firebaseConfigured = isFirebaseConfigured();
+  attachEventListeners();
+  updateAuthenticationUI(true);
 
+  showToast('Sin conexión con Firebase; se usará el guardado local.');
+}
+
+function attachEventListeners() {
   elements.form.addEventListener('submit', handleSubmit);
   elements.cancelEditButton.addEventListener('click', resetForm);
   elements.tableBody.addEventListener('click', handleTableAction);
@@ -170,8 +179,91 @@ function handleInitializationError(error) {
   elements.periodSelect.addEventListener('change', handlePeriodSelection);
   elements.date.addEventListener('change', updateDatePeriodHint);
   elements.type.addEventListener('change', populateExpenseSubtypes);
+  elements.signInButton.addEventListener('click', handleGoogleSignIn);
+  elements.signOutButton.addEventListener('click', handleSignOut);
+}
 
-  showToast('Sin conexión con Firebase; se usará el guardado local.');
+function updateAuthenticationUI(connectionFailed = false) {
+  firebaseConnectionFailed = connectionFailed;
+  const hasPermanentSession = isPermanentUser(signedInUser);
+  elements.signInButton.classList.toggle('hidden', hasPermanentSession || !firebaseConfigured);
+  elements.signOutButton.classList.toggle('hidden', !hasPermanentSession);
+  elements.signInButton.disabled = connectionFailed;
+  elements.submitButton.disabled = requiresGoogleSignIn();
+  elements.submitButton.textContent = elements.submitButton.disabled ? 'Inicia sesión para guardar' : 'Agregar gasto';
+
+  if (connectionFailed) {
+    elements.authStatus.textContent = 'Firebase no está disponible. Se usará el respaldo local.';
+  } else if (!firebaseConfigured) {
+    elements.authStatus.textContent = 'Guardado local: Firebase no está configurado.';
+  } else if (hasPermanentSession) {
+    elements.authStatus.textContent = signedInUser.email || signedInUser.displayName || 'Sesión de Google activa';
+  } else if (signedInUser?.isAnonymous) {
+    elements.authStatus.textContent = 'Vincula los registros actuales con tu cuenta de Google.';
+  } else {
+    elements.authStatus.textContent = 'Inicia sesión para ver tus registros en cualquier dispositivo.';
+  }
+}
+
+function isPermanentUser(user) {
+  return Boolean(user && !user.isAnonymous);
+}
+
+function requiresGoogleSignIn() {
+  return firebaseConfigured && !firebaseConnectionFailed && !isPermanentUser(signedInUser);
+}
+
+async function handleGoogleSignIn() {
+  elements.signInButton.disabled = true;
+  elements.signInButton.textContent = 'Abriendo Google…';
+
+  try {
+    const result = await signInWithGoogle(expenses);
+    signedInUser = result.user;
+    expenses = result.expenses;
+    saveExpensesLocally();
+    firstTrackedPeriodStart = loadFirstTrackedPeriodStart();
+    availablePeriods = buildAvailablePeriods();
+    selectedPeriodId = currentPeriod.id;
+    renderPeriodOptions();
+    resetForm();
+    render();
+    updateAuthenticationUI();
+    showToast('Sesión iniciada. Registros sincronizados con Google.');
+  } catch (error) {
+    console.error('No fue posible iniciar sesión con Google.', error);
+    const messages = {
+      'auth/operation-not-allowed': 'Habilita el proveedor Google en Firebase Authentication.',
+      'auth/popup-closed-by-user': 'Se cerró la ventana antes de iniciar sesión.',
+      'auth/unauthorized-domain': 'Autoriza este dominio en Firebase Authentication.'
+    };
+    const message = messages[error.code] || 'No fue posible iniciar sesión con Google.';
+    showToast(message);
+  } finally {
+    elements.signInButton.disabled = false;
+    elements.signInButton.textContent = 'Entrar con Google';
+  }
+}
+
+async function handleSignOut() {
+  try {
+    await signOutFromFirebase();
+    signedInUser = null;
+    expenses = [];
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(PERIOD_START_STORAGE_KEY);
+    firstTrackedPeriodStart = loadFirstTrackedPeriodStart();
+    availablePeriods = buildAvailablePeriods();
+    selectedPeriodId = currentPeriod.id;
+    renderPeriodOptions();
+    resetForm();
+    render();
+    updateAuthenticationUI();
+    showToast('Sesión cerrada y copia local eliminada.');
+  } catch (error) {
+    console.error('No fue posible cerrar la sesión.', error);
+    showToast('No fue posible cerrar la sesión.');
+  }
 }
 
 function populateExpenseTypes() {
@@ -305,6 +397,10 @@ async function migrateExpensePeriods() {
 
 async function handleSubmit(event) {
   event.preventDefault();
+  if (requiresGoogleSignIn()) {
+    showToast('Inicia sesión con Google antes de guardar.');
+    return;
+  }
   clearErrors();
 
   const draft = {
@@ -436,6 +532,7 @@ function renderTable(periodExpenses) {
   elements.tableContainer.classList.toggle('hidden', periodExpenses.length === 0);
 
   periodExpenses.forEach((expense) => {
+    const disabledAttribute = requiresGoogleSignIn() ? ' disabled' : '';
     const row = document.createElement('tr');
     row.innerHTML = `
       <td>${escapeHTML(formatShortDate(expense.date))}</td>
@@ -445,8 +542,8 @@ function renderTable(periodExpenses) {
       <td class="amount-column">${escapeHTML(formatCurrency(expense.amount))}</td>
       <td class="actions-column">
         <div class="table-actions">
-          <button class="icon-button" type="button" data-action="edit" data-id="${expense.id}">Editar</button>
-          <button class="icon-button icon-button-danger" type="button" data-action="delete" data-id="${expense.id}">Eliminar</button>
+          <button class="icon-button" type="button" data-action="edit" data-id="${expense.id}"${disabledAttribute}>Editar</button>
+          <button class="icon-button icon-button-danger" type="button" data-action="delete" data-id="${expense.id}"${disabledAttribute}>Eliminar</button>
         </div>
       </td>`;
     elements.tableBody.append(row);
@@ -526,6 +623,7 @@ function updateNavigationButtons() {
 }
 
 function handleTableAction(event) {
+  if (requiresGoogleSignIn()) return;
   const button = event.target.closest('button[data-action]');
   if (!button) return;
   if (button.dataset.action === 'edit') startEdit(button.dataset.id);
@@ -570,7 +668,7 @@ function resetForm() {
   elements.form.reset();
   populateExpenseSubtypes();
   elements.expenseId.value = '';
-  elements.submitButton.textContent = 'Agregar gasto';
+  elements.submitButton.textContent = requiresGoogleSignIn() ? 'Inicia sesión para guardar' : 'Agregar gasto';
   elements.cancelEditButton.classList.add('hidden');
   clearErrors();
   setDefaultDate();
