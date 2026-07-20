@@ -1,5 +1,13 @@
 'use strict';
 
+import {
+  connectToFirebase,
+  deleteExpenseFromFirebase,
+  isFirebaseConfigured,
+  saveExpenseToFirebase,
+  syncExpensesToFirebase
+} from './firebase-service.js';
+
 const ExpenseType = Object.freeze({
   FOOD: 'COMIDA',
   TRANSPORTATION: 'TRANSPORTE',
@@ -94,23 +102,32 @@ const elements = {
   }
 };
 
-let expenses = loadExpenses();
+let expenses = [];
 const currentPeriod = getCardPeriod(new Date());
-const firstTrackedPeriodStart = loadFirstTrackedPeriodStart();
-let availablePeriods = buildAvailablePeriods();
+let firstTrackedPeriodStart;
+let availablePeriods = [];
 let selectedPeriodId = currentPeriod.id;
 let toastTimer;
 
-initialize();
+initialize().catch(handleInitializationError);
 
-function initialize() {
+async function initialize() {
+  const localExpenses = loadLocalExpenses();
+  expenses = await connectToFirebase(localExpenses);
+  saveExpensesLocally();
+  firstTrackedPeriodStart = loadFirstTrackedPeriodStart();
+  availablePeriods = buildAvailablePeriods();
+
   populateExpenseTypes();
   populateExpenseSubtypes();
-  migrateExpensePeriods();
+  await migrateExpensePeriods();
   renderPeriodOptions();
   setDefaultDate();
   updateDatePeriodHint();
   render();
+
+  elements.submitButton.disabled = false;
+  elements.submitButton.textContent = 'Agregar gasto';
 
   elements.form.addEventListener('submit', handleSubmit);
   elements.cancelEditButton.addEventListener('click', resetForm);
@@ -120,9 +137,50 @@ function initialize() {
   elements.periodSelect.addEventListener('change', handlePeriodSelection);
   elements.date.addEventListener('change', updateDatePeriodHint);
   elements.type.addEventListener('change', populateExpenseSubtypes);
+
+  if (!isFirebaseConfigured()) {
+    showToast('Firebase aún no está configurado; los datos siguen guardándose localmente.');
+  } else {
+    showToast('Registros sincronizados con Firebase.');
+  }
+}
+
+function handleInitializationError(error) {
+  console.error('No fue posible conectar con Firebase.', error);
+  expenses = loadLocalExpenses();
+  firstTrackedPeriodStart = loadFirstTrackedPeriodStart();
+  availablePeriods = buildAvailablePeriods();
+  populateExpenseTypes();
+  populateExpenseSubtypes();
+  migrateExpensePeriods().catch((migrationError) => {
+    console.error('No fue posible sincronizar la migración de datos.', migrationError);
+  });
+  renderPeriodOptions();
+  setDefaultDate();
+  updateDatePeriodHint();
+  render();
+  elements.submitButton.disabled = false;
+  elements.submitButton.textContent = 'Agregar gasto';
+
+  elements.form.addEventListener('submit', handleSubmit);
+  elements.cancelEditButton.addEventListener('click', resetForm);
+  elements.tableBody.addEventListener('click', handleTableAction);
+  elements.previousPeriodButton.addEventListener('click', () => navigatePeriod(-1));
+  elements.nextPeriodButton.addEventListener('click', () => navigatePeriod(1));
+  elements.periodSelect.addEventListener('change', handlePeriodSelection);
+  elements.date.addEventListener('change', updateDatePeriodHint);
+  elements.type.addEventListener('change', populateExpenseSubtypes);
+
+  showToast('Sin conexión con Firebase; se usará el guardado local.');
 }
 
 function populateExpenseTypes() {
+  elements.type.replaceChildren();
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = 'Selecciona una categoría';
+  elements.type.append(placeholder);
+
   Object.values(ExpenseType).forEach((type) => {
     const option = document.createElement('option');
     option.value = type;
@@ -225,7 +283,7 @@ function getPeriodStatus(startDate, endDate) {
   return 'OPEN';
 }
 
-function migrateExpensePeriods() {
+async function migrateExpensePeriods() {
   let changed = false;
   expenses = expenses.map((expense) => {
     const correctPeriodId = getCardPeriod(parseLocalDate(expense.date)).id;
@@ -239,10 +297,13 @@ function migrateExpensePeriods() {
     }
     return expense;
   });
-  if (changed) saveExpenses();
+  if (changed) {
+    saveExpensesLocally();
+    await syncExpensesToFirebase(expenses);
+  }
 }
 
-function handleSubmit(event) {
+async function handleSubmit(event) {
   event.preventDefault();
   clearErrors();
 
@@ -263,27 +324,36 @@ function handleSubmit(event) {
   const targetPeriod = getCardPeriod(parseLocalDate(draft.date));
   const existingId = elements.expenseId.value;
 
+  let savedExpense;
   if (existingId) {
     expenses = expenses.map((expense) => expense.id === existingId
       ? { ...expense, ...draft, amount: roundMoney(draft.amount), periodId: targetPeriod.id }
       : expense);
-    showToast('Gasto actualizado correctamente.');
+    savedExpense = expenses.find((expense) => expense.id === existingId);
   } else {
-    expenses.push({
+    savedExpense = {
       id: createId(),
       ...draft,
       amount: roundMoney(draft.amount),
       periodId: targetPeriod.id
-    });
-    showToast('Gasto agregado correctamente.');
+    };
+    expenses.push(savedExpense);
   }
 
   selectedPeriodId = targetPeriod.id;
-  saveExpenses();
+  saveExpensesLocally();
   availablePeriods = buildAvailablePeriods();
   renderPeriodOptions();
   resetForm();
   render();
+
+  try {
+    await saveExpenseToFirebase(savedExpense);
+    showToast(existingId ? 'Gasto actualizado correctamente.' : 'Gasto agregado correctamente.');
+  } catch (error) {
+    console.error('No fue posible sincronizar el gasto.', error);
+    showToast('El gasto quedó guardado localmente, pero no se sincronizó.');
+  }
 }
 
 function validateExpense(draft) {
@@ -479,15 +549,21 @@ function startEdit(id) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function deleteExpense(id) {
+async function deleteExpense(id) {
   const expense = expenses.find((item) => item.id === id);
   if (!expense) return;
   if (!window.confirm(`¿Eliminar el gasto “${expense.concept}” por ${formatCurrency(expense.amount)}?`)) return;
   expenses = expenses.filter((item) => item.id !== id);
-  saveExpenses();
+  saveExpensesLocally();
   if (elements.expenseId.value === id) resetForm();
   render();
-  showToast('Gasto eliminado.');
+  try {
+    await deleteExpenseFromFirebase(id);
+    showToast('Gasto eliminado.');
+  } catch (error) {
+    console.error('No fue posible eliminar el gasto de Firebase.', error);
+    showToast('Se eliminó localmente, pero no se sincronizó con Firebase.');
+  }
 }
 
 function resetForm() {
@@ -516,7 +592,7 @@ function updateDatePeriodHint() {
   elements.datePeriodHint.textContent = `Este gasto se guardará en el periodo ${formatPeriodLabel(period)}.`;
 }
 
-function loadExpenses() {
+function loadLocalExpenses() {
   try {
     const rawValue = localStorage.getItem(STORAGE_KEY);
     if (!rawValue) return [];
@@ -532,15 +608,22 @@ function loadExpenses() {
 function loadFirstTrackedPeriodStart() {
   try {
     const storedStart = localStorage.getItem(PERIOD_START_STORAGE_KEY);
+    let firstStart = currentPeriod.startDate;
     if (storedStart) {
       const storedDate = parseLocalDate(storedStart);
       const isValidStart = !Number.isNaN(storedDate.getTime()) &&
         getCardPeriod(storedDate).startDate === storedStart &&
         storedStart <= currentPeriod.startDate;
-      if (isValidStart) return storedStart;
+      if (isValidStart) firstStart = storedStart;
     }
 
-    localStorage.setItem(PERIOD_START_STORAGE_KEY, currentPeriod.startDate);
+    expenses.forEach((expense) => {
+      const expensePeriodStart = getCardPeriod(parseLocalDate(expense.date)).startDate;
+      if (expensePeriodStart < firstStart) firstStart = expensePeriodStart;
+    });
+
+    localStorage.setItem(PERIOD_START_STORAGE_KEY, firstStart);
+    return firstStart;
   } catch (error) {
     console.error('No fue posible guardar el inicio del historial.', error);
   }
@@ -555,7 +638,7 @@ function isValidStoredExpense(expense) {
     Number.isFinite(expense.amount);
 }
 
-function saveExpenses() {
+function saveExpensesLocally() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(expenses));
   } catch (error) {
