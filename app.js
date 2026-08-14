@@ -50,7 +50,7 @@ const CategoryBudgets = Object.freeze({
   [ExpenseType.SUBSCRIPTIONS]: 1850,
   [ExpenseType.PURCHASES]: 1500,
   [ExpenseType.HEALTH]: null,
-  [ExpenseType.YUKI]: null,
+  [ExpenseType.YUKI]: 1200,
   [ExpenseType.MSI]: null
 });
 
@@ -86,6 +86,7 @@ const elements = {
   periodTotal: document.querySelector('#periodTotal'),
   budgetTotal: document.querySelector('#budgetTotal'),
   budgetRemaining: document.querySelector('#budgetRemaining'),
+  budgetPeriodTotal: document.querySelector('#budgetPeriodTotal'),
   summaryExpenseCount: document.querySelector('#summaryExpenseCount'),
   expenseCount: document.querySelector('#expenseCount'),
   tableBody: document.querySelector('#expensesTableBody'),
@@ -529,6 +530,7 @@ function renderSummary(periodExpenses) {
 
   elements.periodTotal.textContent = formatCurrency(total);
   elements.budgetTotal.textContent = formatCurrency(budgetTotal);
+  elements.budgetPeriodTotal.textContent = formatCurrency(budgetedTotal);
   elements.budgetRemaining.textContent = remaining >= 0
     ? formatCurrency(remaining)
     : `${formatCurrency(Math.abs(remaining))} excedido`;
