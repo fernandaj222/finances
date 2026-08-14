@@ -312,7 +312,16 @@ function buildAvailablePeriods() {
     periods.push(getCardPeriod(start));
   }
 
-  return periods;
+  const today = new Date();
+  if (today.getDate() > CUT_OFF_DAY) {
+    const previousPeriodStart = new Date(currentStart.getFullYear(), currentStart.getMonth() - 1, CUT_OFF_DAY + 1);
+    const previousPeriod = getCardPeriod(previousPeriodStart);
+    if (!periods.some((period) => period.id === previousPeriod.id)) {
+      periods.push(previousPeriod);
+    }
+  }
+
+  return periods.sort((first, second) => parseLocalDate(first.startDate) - parseLocalDate(second.startDate));
 }
 
 function renderPeriodOptions() {
