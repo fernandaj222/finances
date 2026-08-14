@@ -59,8 +59,8 @@ const CategoryBudgetComments = Object.freeze({
   [ExpenseType.TRANSPORTATION]: 'Considera gasolina y un menor uso de Uber o DiDi.',
   [ExpenseType.SUBSCRIPTIONS]: 'Gasto prácticamente fijo.',
   [ExpenseType.PURCHASES]: 'Amazon, Mercado Libre, ropa y compras personales.',
+  [ExpenseType.YUKI]: 'Alimento, veterinario, accesorios y estética de Yuki.',
   [ExpenseType.HEALTH]: 'Solo seguimiento: farmacia, consultas y tratamientos.',
-  [ExpenseType.YUKI]: 'Solo seguimiento, sin límite presupuestal.',
   [ExpenseType.MSI]: 'Seguimiento del monto mensual por pagar.'
 });
 
