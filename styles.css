@@ -86,7 +86,9 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--da
 .category-kpi-unbudgeted { margin-top: 16px; padding: 9px 11px; border-radius: 9px; background: #f2f4f7; color: var(--text-muted); font-size: .82rem; font-weight: 700; }
 .category-budget-comment { margin: 8px 0 0; color: var(--text-muted); font-size: .78rem; line-height: 1.45; }
 .category-table-heading { margin-bottom: 12px; }
+.table-header-actions { display: flex; align-items: center; gap: 12px; }
 .count-badge { padding: 7px 11px; border-radius: 999px; background: var(--primary-soft); color: var(--primary); font-size: .8rem; font-weight: 800; }
+.export-button { min-height: 38px; padding: 0 14px; font-size: .8rem; }
 .table-container { overflow-x: auto; border: 1px solid var(--border); border-radius: 14px; }
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: 15px 16px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }

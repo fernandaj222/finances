@@ -89,6 +89,7 @@ const elements = {
   summaryExpenseCount: document.querySelector('#summaryExpenseCount'),
   expenseCount: document.querySelector('#expenseCount'),
   tableBody: document.querySelector('#expensesTableBody'),
+  exportExcelButton: document.querySelector('#exportExcelButton'),
   categoryKpis: document.querySelector('#categoryKpis'),
   categoryTableBody: document.querySelector('#categoryTableBody'),
   tableContainer: document.querySelector('#tableContainer'),
@@ -174,6 +175,7 @@ function attachEventListeners() {
   elements.form.addEventListener('submit', handleSubmit);
   elements.cancelEditButton.addEventListener('click', resetForm);
   elements.tableBody.addEventListener('click', handleTableAction);
+  elements.exportExcelButton.addEventListener('click', handleExportExcel);
   elements.previousPeriodButton.addEventListener('click', () => navigatePeriod(-1));
   elements.nextPeriodButton.addEventListener('click', () => navigatePeriod(1));
   elements.periodSelect.addEventListener('change', handlePeriodSelection);
@@ -629,6 +631,68 @@ function updateNavigationButtons() {
   const index = availablePeriods.findIndex((period) => period.id === selectedPeriodId);
   elements.previousPeriodButton.disabled = index <= 0;
   elements.nextPeriodButton.disabled = index >= availablePeriods.length - 1;
+}
+
+function handleExportExcel() {
+  const selectedPeriod = getSelectedPeriod();
+  const periodExpenses = getPeriodExpenses(selectedPeriod.id);
+
+  if (periodExpenses.length === 0) {
+    showToast('No hay movimientos para exportar en este periodo.');
+    return;
+  }
+
+  const rows = periodExpenses.map((expense) => ({
+    Fecha: formatExportDate(expense.date),
+    Concepto: expense.concept,
+    Categoría: formatType(expense.type),
+    Tipo: expense.subtype || 'Sin clasificar',
+    Costo: Number(expense.amount)
+  }));
+
+  const workbook = window.XLSX ? window.XLSX.utils.book_new() : null;
+  if (workbook) {
+    const worksheet = window.XLSX.utils.json_to_sheet(rows);
+    worksheet['!cols'] = [
+      { wch: 14 },
+      { wch: 22 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 14 }
+    ];
+    window.XLSX.utils.book_append_sheet(workbook, worksheet, 'Movimientos');
+    window.XLSX.writeFile(workbook, `movimientos-${selectedPeriod.startDate}_${selectedPeriod.endDate}.xlsx`);
+    showToast('Excel descargado.');
+    return;
+  }
+
+  const headers = ['Fecha', 'Concepto', 'Categoría', 'Tipo', 'Costo'];
+  const csvRows = [headers, ...rows.map((row) => [
+    row.Fecha,
+    row.Concepto,
+    row.Categoría,
+    row.Tipo,
+    row.Costo.toFixed(2)
+  ])];
+  const csvContent = csvRows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `movimientos-${selectedPeriod.startDate}_${selectedPeriod.endDate}.csv`;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+  showToast('Archivo CSV descargado.');
+}
+
+function formatExportDate(value) {
+  const date = new Date(`${value}T00:00:00Z`);
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const year = date.getUTCFullYear();
+  return `${day}/${month}/${year}`;
 }
 
 function handleTableAction(event) {
