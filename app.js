@@ -74,6 +74,8 @@ const CategoryBudgetComments = Object.freeze({
 
 const STORAGE_KEY = 'personal-finance-expenses-v1';
 const DELETED_EXPENSES_STORAGE_KEY = 'personal-finance-deleted-expenses-v1';
+const PENDING_EXPENSES_STORAGE_KEY = 'personal-finance-pending-expenses-v1';
+const FIREBASE_INITIALIZED_STORAGE_KEY = 'personal-finance-firebase-initialized-v1';
 const PERIOD_START_STORAGE_KEY = 'personal-finance-period-start-v1';
 const CUT_OFF_DAY = 13;
 
@@ -120,6 +122,7 @@ const elements = {
 
 let expenses = [];
 let deletedExpenseIds = new Set();
+let pendingExpenseIds = new Set();
 const currentPeriod = getCardPeriod(new Date());
 let firstTrackedPeriodStart;
 let availablePeriods = [];
@@ -134,9 +137,17 @@ initialize().catch(handleInitializationError);
 async function initialize() {
   const localExpenses = loadLocalExpenses();
   deletedExpenseIds = loadDeletedExpenseIds();
-  const firebaseState = await connectToFirebase(localExpenses, deletedExpenseIds);
+  pendingExpenseIds = loadPendingExpenseIds();
+  const firebaseState = await connectToFirebase(
+    localExpenses,
+    deletedExpenseIds,
+    pendingExpenseIds,
+    loadFirebaseInitialized()
+  );
   expenses = firebaseState.expenses;
   deletedExpenseIds = new Set(firebaseState.deletedExpenseIds);
+  pendingExpenseIds = new Set(firebaseState.pendingExpenseIds);
+  if (firebaseState.user) saveFirebaseInitialized();
   firebaseConfigured = firebaseState.configured;
   signedInUser = firebaseState.user;
   saveExpensesLocally();
@@ -233,10 +244,12 @@ async function handleGoogleSignIn() {
   elements.signInButton.textContent = 'Abriendo Google…';
 
   try {
-    const result = await signInWithGoogle(expenses, deletedExpenseIds);
+    const result = await signInWithGoogle(expenses, deletedExpenseIds, pendingExpenseIds, loadFirebaseInitialized());
     signedInUser = result.user;
     expenses = result.expenses;
     deletedExpenseIds = new Set(result.deletedExpenseIds);
+    pendingExpenseIds = new Set(result.pendingExpenseIds);
+    saveFirebaseInitialized();
     saveExpensesLocally();
     firstTrackedPeriodStart = loadFirstTrackedPeriodStart();
     availablePeriods = buildAvailablePeriods();
@@ -267,8 +280,11 @@ async function handleSignOut() {
     signedInUser = null;
     expenses = [];
     deletedExpenseIds = new Set();
+    pendingExpenseIds = new Set();
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(DELETED_EXPENSES_STORAGE_KEY);
+    localStorage.removeItem(PENDING_EXPENSES_STORAGE_KEY);
+    localStorage.removeItem(FIREBASE_INITIALIZED_STORAGE_KEY);
     localStorage.removeItem(PERIOD_START_STORAGE_KEY);
     firstTrackedPeriodStart = loadFirstTrackedPeriodStart();
     availablePeriods = buildAvailablePeriods();
@@ -467,6 +483,8 @@ async function handleSubmit(event) {
   }
 
   selectedPeriodId = targetPeriod.id;
+  pendingExpenseIds.add(savedExpense.id);
+  savePendingExpenseIds();
   saveExpensesLocally();
   availablePeriods = buildAvailablePeriods();
   renderPeriodOptions();
@@ -475,6 +493,8 @@ async function handleSubmit(event) {
 
   try {
     await saveExpenseToFirebase(savedExpense);
+    pendingExpenseIds.delete(savedExpense.id);
+    savePendingExpenseIds();
     showToast(existingId ? 'Gasto actualizado correctamente.' : 'Gasto agregado correctamente.');
   } catch (error) {
     console.error('No fue posible sincronizar el gasto.', error);
@@ -746,8 +766,10 @@ async function deleteExpense(id) {
   if (!window.confirm(`¿Eliminar el gasto “${expense.concept}” por ${formatCurrency(expense.amount)}?`)) return;
   expenses = expenses.filter((item) => item.id !== id);
   deletedExpenseIds.add(id);
+  pendingExpenseIds.delete(id);
   saveExpensesLocally();
   saveDeletedExpenseIds();
+  savePendingExpenseIds();
   if (elements.expenseId.value === id) resetForm();
   render();
   try {
@@ -813,6 +835,29 @@ function loadDeletedExpenseIds() {
 
 function saveDeletedExpenseIds() {
   localStorage.setItem(DELETED_EXPENSES_STORAGE_KEY, JSON.stringify([...deletedExpenseIds]));
+}
+
+function loadPendingExpenseIds() {
+  try {
+    const rawValue = localStorage.getItem(PENDING_EXPENSES_STORAGE_KEY);
+    const parsedValue = rawValue ? JSON.parse(rawValue) : [];
+    return new Set(Array.isArray(parsedValue) ? parsedValue.filter((id) => typeof id === 'string') : []);
+  } catch (error) {
+    console.error('No fue posible cargar los gastos pendientes de sincronizar.', error);
+    return new Set();
+  }
+}
+
+function savePendingExpenseIds() {
+  localStorage.setItem(PENDING_EXPENSES_STORAGE_KEY, JSON.stringify([...pendingExpenseIds]));
+}
+
+function loadFirebaseInitialized() {
+  return localStorage.getItem(FIREBASE_INITIALIZED_STORAGE_KEY) === 'true';
+}
+
+function saveFirebaseInitialized() {
+  localStorage.setItem(FIREBASE_INITIALIZED_STORAGE_KEY, 'true');
 }
 
 function loadFirstTrackedPeriodStart() {

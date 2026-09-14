@@ -10,23 +10,51 @@ export function isFirebaseConfigured() {
   return Boolean(firebaseConfig.apiKey && firebaseConfig.authDomain && firebaseConfig.projectId && firebaseConfig.appId);
 }
 
-export async function connectToFirebase(localExpenses, deletedExpenseIds = new Set()) {
+export async function connectToFirebase(
+  localExpenses,
+  deletedExpenseIds = new Set(),
+  pendingExpenseIds = new Set(),
+  firebaseInitialized = false
+) {
   if (!isFirebaseConfigured()) {
-    return { configured: false, expenses: localExpenses, deletedExpenseIds: [...deletedExpenseIds], user: null };
+    return {
+      configured: false,
+      expenses: localExpenses,
+      deletedExpenseIds: [...deletedExpenseIds],
+      pendingExpenseIds: [...pendingExpenseIds],
+      user: null
+    };
   }
 
   await loadFirebase();
   await auth.authStateReady();
 
   if (!auth.currentUser) {
-    return { configured: true, expenses: localExpenses, deletedExpenseIds: [...deletedExpenseIds], user: null };
+    return {
+      configured: true,
+      expenses: localExpenses,
+      deletedExpenseIds: [...deletedExpenseIds],
+      pendingExpenseIds: [...pendingExpenseIds],
+      user: null
+    };
   }
 
-  const result = await connectUserExpenses(auth.currentUser, localExpenses, deletedExpenseIds);
+  const result = await connectUserExpenses(
+    auth.currentUser,
+    localExpenses,
+    deletedExpenseIds,
+    pendingExpenseIds,
+    firebaseInitialized
+  );
   return { configured: true, ...result, user: auth.currentUser };
 }
 
-export async function signInWithGoogle(localExpenses, deletedExpenseIds = new Set()) {
+export async function signInWithGoogle(
+  localExpenses,
+  deletedExpenseIds = new Set(),
+  pendingExpenseIds = new Set(),
+  firebaseInitialized = false
+) {
   await loadFirebase();
   const provider = new authSdk.GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
@@ -46,7 +74,13 @@ export async function signInWithGoogle(localExpenses, deletedExpenseIds = new Se
     credential = await authSdk.signInWithPopup(auth, provider);
   }
 
-  const result = await connectUserExpenses(credential.user, localExpenses, deletedExpenseIds);
+  const result = await connectUserExpenses(
+    credential.user,
+    localExpenses,
+    deletedExpenseIds,
+    pendingExpenseIds,
+    firebaseInitialized
+  );
   return { ...result, user: credential.user };
 }
 
@@ -96,7 +130,7 @@ async function loadFirebase() {
   database = firestoreSdk.getFirestore(app);
 }
 
-async function connectUserExpenses(user, localExpenses, deletedExpenseIds) {
+async function connectUserExpenses(user, localExpenses, deletedExpenseIds, pendingExpenseIds, firebaseInitialized) {
   expensesCollection = firestoreSdk.collection(database, 'users', user.uid, 'expenses');
   const pendingDeletedIds = new Set(deletedExpenseIds);
   for (const expenseId of pendingDeletedIds) {
@@ -109,16 +143,27 @@ async function connectUserExpenses(user, localExpenses, deletedExpenseIds) {
   }
 
   const snapshot = await firestoreSdk.getDocs(expensesCollection);
-  const cloudExpenses = snapshot.docs.map((expenseDocument) => ({
+  let cloudExpenses = snapshot.docs.map((expenseDocument) => ({
     ...expenseDocument.data(),
     id: expenseDocument.id
   })).filter((expense) => !pendingDeletedIds.has(expense.id));
-  const mergedExpenses = new Map(cloudExpenses.map((expense) => [expense.id, expense]));
-  localExpenses
-    .filter((expense) => !pendingDeletedIds.has(expense.id))
-    .forEach((expense) => mergedExpenses.set(expense.id, expense));
 
-  const remainingLocalExpenses = localExpenses.filter((expense) => !pendingDeletedIds.has(expense.id));
-  if (remainingLocalExpenses.length > 0) await syncExpensesToFirebase(remainingLocalExpenses);
-  return { expenses: [...mergedExpenses.values()], deletedExpenseIds: [...pendingDeletedIds] };
+  const localExpensesToSync = firebaseInitialized
+    ? localExpenses.filter((expense) => pendingExpenseIds.has(expense.id))
+    : localExpenses.filter((expense) => !pendingDeletedIds.has(expense.id));
+  if (localExpensesToSync.length > 0) {
+    await syncExpensesToFirebase(localExpensesToSync);
+    const syncedIds = new Set(localExpensesToSync.map((expense) => expense.id));
+    cloudExpenses = [
+      ...cloudExpenses.filter((expense) => !syncedIds.has(expense.id)),
+      ...localExpensesToSync
+    ];
+  }
+
+  const mergedExpenses = new Map(cloudExpenses.map((expense) => [expense.id, expense]));
+  return {
+    expenses: [...mergedExpenses.values()],
+    deletedExpenseIds: [...pendingDeletedIds],
+    pendingExpenseIds: []
+  };
 }
