@@ -73,6 +73,7 @@ const CategoryBudgetComments = Object.freeze({
 });
 
 const STORAGE_KEY = 'personal-finance-expenses-v1';
+const DELETED_EXPENSES_STORAGE_KEY = 'personal-finance-deleted-expenses-v1';
 const PERIOD_START_STORAGE_KEY = 'personal-finance-period-start-v1';
 const CUT_OFF_DAY = 13;
 
@@ -118,6 +119,7 @@ const elements = {
 };
 
 let expenses = [];
+let deletedExpenseIds = new Set();
 const currentPeriod = getCardPeriod(new Date());
 let firstTrackedPeriodStart;
 let availablePeriods = [];
@@ -131,8 +133,10 @@ initialize().catch(handleInitializationError);
 
 async function initialize() {
   const localExpenses = loadLocalExpenses();
-  const firebaseState = await connectToFirebase(localExpenses);
+  deletedExpenseIds = loadDeletedExpenseIds();
+  const firebaseState = await connectToFirebase(localExpenses, deletedExpenseIds);
   expenses = firebaseState.expenses;
+  deletedExpenseIds = new Set(firebaseState.deletedExpenseIds);
   firebaseConfigured = firebaseState.configured;
   signedInUser = firebaseState.user;
   saveExpensesLocally();
@@ -229,9 +233,10 @@ async function handleGoogleSignIn() {
   elements.signInButton.textContent = 'Abriendo Google…';
 
   try {
-    const result = await signInWithGoogle(expenses);
+    const result = await signInWithGoogle(expenses, deletedExpenseIds);
     signedInUser = result.user;
     expenses = result.expenses;
+    deletedExpenseIds = new Set(result.deletedExpenseIds);
     saveExpensesLocally();
     firstTrackedPeriodStart = loadFirstTrackedPeriodStart();
     availablePeriods = buildAvailablePeriods();
@@ -261,7 +266,9 @@ async function handleSignOut() {
     await signOutFromFirebase();
     signedInUser = null;
     expenses = [];
+    deletedExpenseIds = new Set();
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(DELETED_EXPENSES_STORAGE_KEY);
     localStorage.removeItem(PERIOD_START_STORAGE_KEY);
     firstTrackedPeriodStart = loadFirstTrackedPeriodStart();
     availablePeriods = buildAvailablePeriods();
@@ -738,11 +745,15 @@ async function deleteExpense(id) {
   if (!expense) return;
   if (!window.confirm(`¿Eliminar el gasto “${expense.concept}” por ${formatCurrency(expense.amount)}?`)) return;
   expenses = expenses.filter((item) => item.id !== id);
+  deletedExpenseIds.add(id);
   saveExpensesLocally();
+  saveDeletedExpenseIds();
   if (elements.expenseId.value === id) resetForm();
   render();
   try {
     await deleteExpenseFromFirebase(id);
+    deletedExpenseIds.delete(id);
+    saveDeletedExpenseIds();
     showToast('Gasto eliminado.');
   } catch (error) {
     console.error('No fue posible eliminar el gasto de Firebase.', error);
@@ -787,6 +798,21 @@ function loadLocalExpenses() {
     console.error('No fue posible cargar los gastos guardados.', error);
     return [];
   }
+}
+
+function loadDeletedExpenseIds() {
+  try {
+    const rawValue = localStorage.getItem(DELETED_EXPENSES_STORAGE_KEY);
+    const parsedValue = rawValue ? JSON.parse(rawValue) : [];
+    return new Set(Array.isArray(parsedValue) ? parsedValue.filter((id) => typeof id === 'string') : []);
+  } catch (error) {
+    console.error('No fue posible cargar los gastos pendientes de eliminar.', error);
+    return new Set();
+  }
+}
+
+function saveDeletedExpenseIds() {
+  localStorage.setItem(DELETED_EXPENSES_STORAGE_KEY, JSON.stringify([...deletedExpenseIds]));
 }
 
 function loadFirstTrackedPeriodStart() {
