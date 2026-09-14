@@ -14,23 +14,28 @@ const ExpenseType = Object.freeze({
   FOOD: 'COMIDA',
   TRANSPORTATION: 'TRANSPORTE',
   SUBSCRIPTIONS: 'SUSCRIPCIONES',
-  PURCHASES: 'COMPRAS',
-  HEALTH: 'SALUD',
+  FASHION_PERSONAL_CARE: 'MODA_CUIDADO_PERSONAL',
+  HOME: 'HOGAR',
   YUKI: 'YUKI',
+  HEALTH: 'SALUD',
   MSI: 'MSI'
 });
 
 const LegacyExpenseType = Object.freeze({
-  PERSONAL_HEALTH: 'PERSONAL_Y_SALUD'
+  PURCHASES: 'COMPRAS',
+  HEALTH: 'SALUD',
+  PERSONAL_HEALTH: 'PERSONAL_Y_SALUD',
+  MSI: 'MSI'
 });
 
 const ExpenseTypeIcon = Object.freeze({
   [ExpenseType.FOOD]: '🍔',
   [ExpenseType.TRANSPORTATION]: '🚗',
   [ExpenseType.SUBSCRIPTIONS]: '📺',
-  [ExpenseType.PURCHASES]: '🛍️',
-  [ExpenseType.HEALTH]: '❤️',
+  [ExpenseType.FASHION_PERSONAL_CARE]: '👗',
+  [ExpenseType.HOME]: '📦',
   [ExpenseType.YUKI]: '🐶',
+  [ExpenseType.HEALTH]: '❤️',
   [ExpenseType.MSI]: '💳'
 });
 
@@ -38,19 +43,21 @@ const ExpenseSubtypes = Object.freeze({
   [ExpenseType.FOOD]: ['Uber Eats', 'Restaurantes', 'Autoservicio', 'Súper', 'Otro'],
   [ExpenseType.TRANSPORTATION]: ['Uber', 'DiDi', 'Gasolina', 'Estacionamiento', 'Otro'],
   [ExpenseType.SUBSCRIPTIONS]: ['Streaming', 'Música', 'Nube', 'Aplicaciones', 'Otro'],
-  [ExpenseType.PURCHASES]: ['Ecommerce', 'Ropa', 'Otro'],
-  [ExpenseType.HEALTH]: ['Wegovy', 'Farmacia', 'Consultas', 'Otro'],
+  [ExpenseType.FASHION_PERSONAL_CARE]: ['Ropa', 'Calzado', 'Cuidado personal', 'Farmacia', 'Otro'],
+  [ExpenseType.HOME]: ['Muebles', 'Electrodomésticos', 'Limpieza', 'Decoración', 'Otro'],
   [ExpenseType.YUKI]: ['Alimento', 'Veterinario', 'Accesorios', 'Estética', 'Otro'],
+  [ExpenseType.HEALTH]: ['Wegovy', 'Farmacia', 'Consultas', 'Otro'],
   [ExpenseType.MSI]: ['Tecnología', 'Hogar', 'Ropa', 'Otro']
 });
 
 const CategoryBudgets = Object.freeze({
-  [ExpenseType.FOOD]: 2300,
-  [ExpenseType.TRANSPORTATION]: 1500,
-  [ExpenseType.SUBSCRIPTIONS]: 1850,
-  [ExpenseType.PURCHASES]: 1500,
-  [ExpenseType.HEALTH]: null,
+  [ExpenseType.FOOD]: 2800,
+  [ExpenseType.TRANSPORTATION]: 1400,
+  [ExpenseType.SUBSCRIPTIONS]: 1000,
+  [ExpenseType.FASHION_PERSONAL_CARE]: 1200,
+  [ExpenseType.HOME]: 1196.44,
   [ExpenseType.YUKI]: 1200,
+  [ExpenseType.HEALTH]: null,
   [ExpenseType.MSI]: null
 });
 
@@ -58,7 +65,8 @@ const CategoryBudgetComments = Object.freeze({
   [ExpenseType.FOOD]: 'Incluye restaurantes, Uber Eats, autoservicio y súper.',
   [ExpenseType.TRANSPORTATION]: 'Considera gasolina y un menor uso de Uber o DiDi.',
   [ExpenseType.SUBSCRIPTIONS]: 'Gasto prácticamente fijo.',
-  [ExpenseType.PURCHASES]: 'Amazon, Mercado Libre, ropa y compras personales.',
+  [ExpenseType.FASHION_PERSONAL_CARE]: 'Ropa, calzado, farmacia y cuidado personal.',
+  [ExpenseType.HOME]: 'Muebles, limpieza, decoración y artículos para el hogar.',
   [ExpenseType.YUKI]: 'Alimento, veterinario, accesorios y estética de Yuki.',
   [ExpenseType.HEALTH]: 'Solo seguimiento: farmacia, consultas y tratamientos.',
   [ExpenseType.MSI]: 'Seguimiento del monto mensual por pagar.'
@@ -391,10 +399,13 @@ async function migrateExpensePeriods() {
   let changed = false;
   expenses = expenses.map((expense) => {
     const correctPeriodId = getCardPeriod(parseLocalDate(expense.date)).id;
+    const legacyType = expense.type;
     const healthSubtypes = ['Wegovy', 'Farmacia', 'Consultas'];
-    const correctType = expense.type === LegacyExpenseType.PERSONAL_HEALTH
-      ? (healthSubtypes.includes(expense.subtype) ? ExpenseType.HEALTH : ExpenseType.PURCHASES)
-      : expense.type;
+    const correctType = legacyType === LegacyExpenseType.PURCHASES
+      ? ExpenseType.FASHION_PERSONAL_CARE
+      : legacyType === LegacyExpenseType.PERSONAL_HEALTH
+        ? (healthSubtypes.includes(expense.subtype) ? ExpenseType.HEALTH : ExpenseType.FASHION_PERSONAL_CARE)
+        : legacyType;
     if (expense.periodId !== correctPeriodId || expense.type !== correctType) {
       changed = true;
       return { ...expense, periodId: correctPeriodId, type: correctType };
@@ -864,6 +875,7 @@ function formatShortDate(value) {
 }
 
 function formatType(type) {
+  if (type === ExpenseType.FASHION_PERSONAL_CARE) return 'Moda & Cuidado Personal';
   if (type === ExpenseType.MSI) return 'MSI';
   const label = type.replaceAll('_', ' ');
   return label.charAt(0) + label.slice(1).toLowerCase();
