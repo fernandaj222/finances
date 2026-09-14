@@ -44,7 +44,8 @@ export async function connectToFirebase(
     localExpenses,
     deletedExpenseIds,
     pendingExpenseIds,
-    firebaseInitialized
+    firebaseInitialized,
+    false
   );
   return { configured: true, ...result, user: auth.currentUser };
 }
@@ -79,7 +80,8 @@ export async function signInWithGoogle(
     localExpenses,
     deletedExpenseIds,
     pendingExpenseIds,
-    firebaseInitialized
+    firebaseInitialized,
+    true
   );
   return { ...result, user: credential.user };
 }
@@ -130,7 +132,14 @@ async function loadFirebase() {
   database = firestoreSdk.getFirestore(app);
 }
 
-async function connectUserExpenses(user, localExpenses, deletedExpenseIds, pendingExpenseIds, firebaseInitialized) {
+async function connectUserExpenses(
+  user,
+  localExpenses,
+  deletedExpenseIds,
+  pendingExpenseIds,
+  firebaseInitialized,
+  allowLocalMigration
+) {
   expensesCollection = firestoreSdk.collection(database, 'users', user.uid, 'expenses');
   const pendingDeletedIds = new Set(deletedExpenseIds);
   for (const expenseId of pendingDeletedIds) {
@@ -148,7 +157,7 @@ async function connectUserExpenses(user, localExpenses, deletedExpenseIds, pendi
     id: expenseDocument.id
   })).filter((expense) => !pendingDeletedIds.has(expense.id));
 
-  const localExpensesToSync = firebaseInitialized
+  const localExpensesToSync = firebaseInitialized || !allowLocalMigration
     ? localExpenses.filter((expense) => pendingExpenseIds.has(expense.id))
     : localExpenses.filter((expense) => !pendingDeletedIds.has(expense.id));
   if (localExpensesToSync.length > 0) {
