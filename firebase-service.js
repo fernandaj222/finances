@@ -10,18 +10,11 @@ export function isFirebaseConfigured() {
   return Boolean(firebaseConfig.apiKey && firebaseConfig.authDomain && firebaseConfig.projectId && firebaseConfig.appId);
 }
 
-export async function connectToFirebase(
-  localExpenses,
-  deletedExpenseIds = new Set(),
-  pendingExpenseIds = new Set(),
-  firebaseInitialized = false
-) {
+export async function connectToFirebase() {
   if (!isFirebaseConfigured()) {
     return {
       configured: false,
-      expenses: localExpenses,
-      deletedExpenseIds: [...deletedExpenseIds],
-      pendingExpenseIds: [...pendingExpenseIds],
+      expenses: [],
       user: null
     };
   }
@@ -32,30 +25,16 @@ export async function connectToFirebase(
   if (!auth.currentUser) {
     return {
       configured: true,
-      expenses: localExpenses,
-      deletedExpenseIds: [...deletedExpenseIds],
-      pendingExpenseIds: [...pendingExpenseIds],
+      expenses: [],
       user: null
     };
   }
 
-  const result = await connectUserExpenses(
-    auth.currentUser,
-    localExpenses,
-    deletedExpenseIds,
-    pendingExpenseIds,
-    firebaseInitialized,
-    false
-  );
+  const result = await connectUserExpenses(auth.currentUser);
   return { configured: true, ...result, user: auth.currentUser };
 }
 
-export async function signInWithGoogle(
-  localExpenses,
-  deletedExpenseIds = new Set(),
-  pendingExpenseIds = new Set(),
-  firebaseInitialized = false
-) {
+export async function signInWithGoogle() {
   await loadFirebase();
   const provider = new authSdk.GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
@@ -75,14 +54,7 @@ export async function signInWithGoogle(
     credential = await authSdk.signInWithPopup(auth, provider);
   }
 
-  const result = await connectUserExpenses(
-    credential.user,
-    localExpenses,
-    deletedExpenseIds,
-    pendingExpenseIds,
-    firebaseInitialized,
-    true
-  );
+  const result = await connectUserExpenses(credential.user);
   return { ...result, user: credential.user };
 }
 
@@ -132,47 +104,14 @@ async function loadFirebase() {
   database = firestoreSdk.getFirestore(app);
 }
 
-async function connectUserExpenses(
-  user,
-  localExpenses,
-  deletedExpenseIds,
-  pendingExpenseIds,
-  firebaseInitialized,
-  allowLocalMigration
-) {
+async function connectUserExpenses(user) {
   expensesCollection = firestoreSdk.collection(database, 'users', user.uid, 'expenses');
-  const pendingDeletedIds = new Set(deletedExpenseIds);
-  for (const expenseId of pendingDeletedIds) {
-    try {
-      await firestoreSdk.deleteDoc(firestoreSdk.doc(expensesCollection, expenseId));
-      pendingDeletedIds.delete(expenseId);
-    } catch (error) {
-      console.error(`No fue posible sincronizar la eliminación de ${expenseId}.`, error);
-    }
-  }
-
   const snapshot = await firestoreSdk.getDocs(expensesCollection);
-  let cloudExpenses = snapshot.docs.map((expenseDocument) => ({
+  const cloudExpenses = snapshot.docs.map((expenseDocument) => ({
     ...expenseDocument.data(),
     id: expenseDocument.id
-  })).filter((expense) => !pendingDeletedIds.has(expense.id));
-
-  const localExpensesToSync = firebaseInitialized || !allowLocalMigration
-    ? localExpenses.filter((expense) => pendingExpenseIds.has(expense.id))
-    : localExpenses.filter((expense) => !pendingDeletedIds.has(expense.id));
-  if (localExpensesToSync.length > 0) {
-    await syncExpensesToFirebase(localExpensesToSync);
-    const syncedIds = new Set(localExpensesToSync.map((expense) => expense.id));
-    cloudExpenses = [
-      ...cloudExpenses.filter((expense) => !syncedIds.has(expense.id)),
-      ...localExpensesToSync
-    ];
-  }
-
-  const mergedExpenses = new Map(cloudExpenses.map((expense) => [expense.id, expense]));
+  }));
   return {
-    expenses: [...mergedExpenses.values()],
-    deletedExpenseIds: [...pendingDeletedIds],
-    pendingExpenseIds: []
+    expenses: cloudExpenses
   };
 }

@@ -13,7 +13,6 @@ por lo que pueden consultarse desde distintos navegadores y dispositivos.
 4. En **Authentication > Settings > Authorized domains**, agrega el dominio de la
    aplicación, por ejemplo `fernandaj222.github.io`.
 
-Los registros existentes en `localStorage` se copian a Firestore al iniciar sesión. Si
-el navegador conserva el usuario anónimo de la versión anterior, la aplicación intenta
-vincularlo con Google para mantener sus registros. Después de vincular la cuenta y
-confirmar que los gastos aparecen, se puede deshabilitar el proveedor **Anónimo**.
+La aplicación no conserva gastos ni colas de sincronización en `localStorage`: Firestore
+es la única fuente de datos. Es necesario iniciar sesión con Google para consultar,
+crear, editar o eliminar registros.
