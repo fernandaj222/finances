@@ -51,11 +51,11 @@ const ExpenseSubtypes = Object.freeze({
 });
 
 const CategoryBudgets = Object.freeze({
-  [ExpenseType.FOOD]: 2800,
-  [ExpenseType.TRANSPORTATION]: 1400,
-  [ExpenseType.SUBSCRIPTIONS]: 1000,
-  [ExpenseType.FASHION_PERSONAL_CARE]: 1200,
-  [ExpenseType.HOME]: 1196.44,
+  [ExpenseType.FOOD]: 2600,
+  [ExpenseType.TRANSPORTATION]: 1200,
+  [ExpenseType.SUBSCRIPTIONS]: 1100,
+  [ExpenseType.FASHION_PERSONAL_CARE]: 1500,
+  [ExpenseType.HOME]: 1300,
   [ExpenseType.YUKI]: 1200,
   [ExpenseType.HEALTH]: null,
   [ExpenseType.MSI]: null
