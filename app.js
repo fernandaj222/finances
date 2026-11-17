@@ -596,6 +596,12 @@ function renderCategoryTable(periodExpenses) {
         ? `${formatCurrency(balance)} disponible`
         : `${formatCurrency(Math.abs(balance))} excedido`)
       : 'Sin evaluación presupuestal';
+    const budgetMarkup = hasBudget
+      ? `<div class="category-kpi-budget">
+          <span>Presupuesto asignado</span>
+          <strong>${escapeHTML(formatCurrency(budget))}</strong>
+        </div>`
+      : '';
     const kpi = document.createElement('article');
     kpi.className = `category-kpi${hasBudget && balance < 0 ? ' over-budget' : ''}`;
     kpi.innerHTML = `
@@ -606,6 +612,7 @@ function renderCategoryTable(periodExpenses) {
         </span>
         <strong>${escapeHTML(formatCurrency(total))}</strong>
       </div>
+      ${budgetMarkup}
       ${progressMarkup}
       <small>${typeExpenses.length} ${typeExpenses.length === 1 ? 'movimiento' : 'movimientos'} · ${escapeHTML(balanceLabel)}</small>
       <p class="category-budget-comment">${escapeHTML(CategoryBudgetComments[type])}</p>`;

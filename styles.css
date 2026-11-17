@@ -77,7 +77,9 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--da
 .category-kpi-heading strong { flex-shrink: 0; font-size: 1.15rem; }
 .category-kpi-name { display: flex; align-items: center; gap: 10px; min-width: 0; font-weight: 800; }
 .category-kpi-icon { font-size: 1.3rem; }
-.category-kpi-progress-row { margin-top: 16px; }
+.category-kpi-budget { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; color: var(--text-muted); font-size: .82rem; }
+.category-kpi-budget strong { color: var(--text); }
+.category-kpi-progress-row { margin-top: 10px; }
 .category-kpi-progress { width: 100%; height: 10px; overflow: hidden; border-radius: 999px; background: #e4e7ec; }
 .category-kpi-progress span { display: block; height: 100%; border-radius: inherit; background: var(--primary); }
 .category-kpi-progress.over-budget span { background: var(--danger); }
